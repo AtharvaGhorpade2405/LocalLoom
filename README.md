@@ -6,7 +6,7 @@ Minimal local-first multi-agent coding TUI. Type `localloom` to enter the UI, pr
 
 ```bash
 # install
-git clone <this-repo>
+git clone https://github.com/AtharvaGhorpade2405/LocalLoom
 cd localloom
 npm install
 npm link       # puts `localloom` on PATH
