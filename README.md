@@ -9,6 +9,7 @@ Minimal local-first multi-agent coding TUI. Type `localloom` to enter the UI, pr
 git clone https://github.com/AtharvaGhorpade2405/LocalLoom
 cd localloom
 npm install
+npm run build  # compile TypeScript to JavaScript for faster startup
 npm link       # puts `localloom` on PATH
 
 # run a local model server (pick one)
