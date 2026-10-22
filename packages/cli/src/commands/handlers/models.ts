@@ -21,6 +21,12 @@ export default Runtime.handler(
     const models = response.data
       .map((model) => `${model.providerID}/${model.id}`)
       .toSorted((a, b) => a.localeCompare(b))
-    if (models.length > 0) process.stdout.write(models.join(EOL) + EOL)
+    if (models.length > 0) {
+      process.stdout.write(models.join(EOL) + EOL)
+      return
+    }
+    process.stderr.write(
+      `No local models found.${EOL}Please ensure Ollama is running (default: http://127.0.0.1:11434) and models are pulled (e.g. \`ollama pull qwen2.5-coder:7b\`).${EOL}`,
+    )
   }),
 )

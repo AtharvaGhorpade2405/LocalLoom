@@ -485,6 +485,24 @@ function normalizeExperimental(
         )
         if (value !== undefined) result.subagent_depth = value
       }
+      if (own(experimental, "subagent_max_concurrent")) {
+        const value = decodeEncoded(
+          ConfigExperimental.Info.fields.subagent_max_concurrent,
+          experimental.subagent_max_concurrent,
+          ["experimental", "subagent_max_concurrent"],
+          diagnostics,
+        )
+        if (value !== undefined) result.subagent_max_concurrent = value
+      }
+      if (own(experimental, "subagent_max_tasks")) {
+        const value = decodeEncoded(
+          ConfigExperimental.Info.fields.subagent_max_tasks,
+          experimental.subagent_max_tasks,
+          ["experimental", "subagent_max_tasks"],
+          diagnostics,
+        )
+        if (value !== undefined) result.subagent_max_tasks = value
+      }
       if (own(experimental, "location_idle_timeout")) {
         const value = decodeEncoded(
           ConfigExperimental.Info.fields.location_idle_timeout,

@@ -3,7 +3,7 @@ export * as SubagentTool from "./subagent.js"
 import { ToolFailure } from "@opencode/ai"
 import type { Context } from "@opencode/plugin/effect/plugin"
 import type { SessionHooks } from "@opencode/plugin/effect/session"
-import { Effect, Predicate, Schema } from "effect"
+import { Effect, Predicate, Schema, Scope } from "effect"
 import { Agent } from "../../agent.js"
 import { Config } from "../../config.js"
 import { Job } from "../../job.js"
@@ -15,6 +15,25 @@ import { SubagentCompletion } from "../../session/subagent-completion.js"
 import { SubagentJob } from "../../session/subagent-job.js"
 
 export const name = "subagent"
+const isCloudProvider = (id: string) =>
+  id === "openai" ||
+  id === "anthropic" ||
+  id === "google" ||
+  id === "amazon-bedrock" ||
+  id === "azure" ||
+  id === "vertex" ||
+  id === "github-copilot"
+
+
+export const activeSubagents = new Map<SessionSchema.ID, Set<SessionSchema.ID>>()
+export const activeFiles = new Map<SessionSchema.ID, Set<string>>()
+export const subagentTaskCounts = new Map<SessionSchema.ID, number>()
+
+export const resetSubagentTracking = () => {
+  activeSubagents.clear()
+  activeFiles.clear()
+  subagentTaskCounts.clear()
+}
 
 const backgroundResult = (sessionID: SessionSchema.ID) => ({
   sessionID,
@@ -45,6 +64,10 @@ export const Input = Schema.Struct({
     description:
       "Run the subagent in the background and return immediately. You will be notified when it completes. DO NOT sleep, poll, or proactively check on its progress.",
   }),
+  files: Schema.optionalKey(Schema.Array(Schema.String)).annotate({
+    description:
+      "Target file paths this subagent will inspect or modify. Used to detect and prevent conflicting concurrent modifications.",
+  }),
 })
 
 export const Output = Schema.Struct({
@@ -64,6 +87,7 @@ export const description = [
 export const Plugin = {
   id: "opencode.tool.subagent",
   effect: Effect.fn("SubagentTool.Plugin")(function* (ctx: Context) {
+    const scope = yield* Scope.Scope
     const sessions = yield* Session.Service
     const jobs = yield* Job.Service
     const agents = yield* Agent.Service
@@ -107,6 +131,36 @@ export const Plugin = {
           output: Output,
           execute: (input, context) =>
             Effect.gen(function* () {
+              if (context.agent === input.agent)
+                return yield* new ToolFailure({ message: `Agent ${context.agent} cannot delegate to itself` })
+
+              const active = activeSubagents.get(context.sessionID) ?? new Set<SessionSchema.ID>()
+              const maxConcurrent =
+                Config.latest(yield* config.entries(), "experimental")?.subagent_max_concurrent ?? 2
+              if (active.size >= maxConcurrent)
+                return yield* new ToolFailure({
+                  message: `Concurrent subagent limit reached (${maxConcurrent}). Wait for running subagents to complete before spawning new tasks.`,
+                })
+
+              const maxTasks = Config.latest(yield* config.entries(), "experimental")?.subagent_max_tasks ?? 10
+              const totalTasks = (subagentTaskCounts.get(context.sessionID) ?? 0) + 1
+              if (totalTasks > maxTasks)
+                return yield* new ToolFailure({
+                  message: `Subagent task limit reached (${maxTasks} tasks for session ${context.sessionID}). Consolidate work or complete the workflow.`,
+                })
+
+              const requestedFiles = input.files ?? []
+              if (requestedFiles.length > 0) {
+                const currentFiles = activeFiles.get(context.sessionID) ?? new Set<string>()
+                for (const file of requestedFiles) {
+                  if (currentFiles.has(file)) {
+                    return yield* new ToolFailure({
+                      message: `Conflicting concurrent access: file "${file}" is already being modified by an active subagent task. Wait for it to complete or coordinate sequential execution.`,
+                    })
+                  }
+                }
+              }
+
               const parent = yield* sessions
                 .get(context.sessionID)
                 .pipe(
@@ -182,6 +236,11 @@ export const Plugin = {
               }
 
               const model = override ?? agent.model ?? parent.model
+              if (model && isCloudProvider(model.providerID)) {
+                return yield* new ToolFailure({
+                  message: `Cloud providers are disabled in this local-only environment. Subagent must use an approved local provider (ollama).`,
+                })
+              }
               const child =
                 existing ??
                 (yield* sessions
@@ -217,6 +276,41 @@ export const Plugin = {
                   ),
                 )
 
+              active.add(child.id)
+              activeSubagents.set(context.sessionID, active)
+              subagentTaskCounts.set(context.sessionID, totalTasks)
+              if (requestedFiles.length > 0) {
+                const currentFiles = activeFiles.get(context.sessionID) ?? new Set<string>()
+                for (const file of requestedFiles) currentFiles.add(file)
+                activeFiles.set(context.sessionID, currentFiles)
+              }
+
+              let backgrounded = background
+              const release = Effect.sync(() => {
+                if (backgrounded) return
+                const cur = activeSubagents.get(context.sessionID)
+                if (cur) {
+                  cur.delete(child.id)
+                  if (cur.size === 0) activeSubagents.delete(context.sessionID)
+                }
+                if (requestedFiles.length > 0) {
+                  const curFiles = activeFiles.get(context.sessionID)
+                  if (curFiles) {
+                    for (const file of requestedFiles) curFiles.delete(file)
+                    if (curFiles.size === 0) activeFiles.delete(context.sessionID)
+                  }
+                }
+              })
+              const cleanupBackground = jobs.wait({ id: child.id }).pipe(
+                Effect.andThen(
+                  Effect.sync(() => {
+                    backgrounded = false
+                  }),
+                ),
+                Effect.andThen(release),
+                Effect.forkIn(scope, { startImmediately: true }),
+              )
+
               const recovery = {
                 kind: "subagent" as const,
                 parentSessionID: context.sessionID,
@@ -228,6 +322,7 @@ export const Plugin = {
 
               if (background) {
                 yield* subagents.background(recovery)
+                yield* cleanupBackground
                 return backgroundResult(child.id)
               }
 
@@ -237,9 +332,12 @@ export const Plugin = {
                     discard: true,
                   }),
                 ),
+                Effect.ensuring(release),
               )
               if (result?.type === "backgrounded") {
+                backgrounded = true
                 yield* subagents.notify(recovery, result.info.started_at)
+                yield* cleanupBackground
                 return backgroundResult(child.id)
               }
               // Failure surfaces keep the sessionID visible so the model can continue the child.

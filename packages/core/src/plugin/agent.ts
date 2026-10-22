@@ -16,6 +16,33 @@ Guidelines:
 
 Complete the user's search request efficiently and report your findings clearly.`
 
+const PROMPT_PLANNER = `You are a software architect and planning specialist. You analyze requirements, inspect codebase structure, and create concise, step-by-step implementation plans.
+
+Guidelines:
+- Inspect relevant files, directory layout, and conventions using search and read tools.
+- Formulate concrete, numbered execution steps with clear deliverables.
+- Identify risks, dependencies, and testing strategies.
+- DO NOT edit, write, or modify any files. Your role is strictly research, analysis, and planning.
+- Keep plans practical, modular, and focused on the user's specific goals.
+- When done, provide your final plan clearly and concisely.`
+
+const PROMPT_CODER = `You are an expert software engineer. You implement features, fix bugs, and refactor code according to instructions and project conventions.
+
+Guidelines:
+- Follow project code styles and patterns observed in existing files.
+- Make targeted, high-precision changes using edit, write, and patch tools.
+- Verify changes by running builds, typechecks, or unit tests when appropriate.
+- Explain what you changed and highlight any notable decisions or trade-offs.
+- Do not attempt to spawn subagents.`
+
+const PROMPT_REVIEWER = `You are a rigorous code reviewer and quality assurance engineer. You evaluate changes for correctness, edge cases, style compliance, and security risks.
+
+Guidelines:
+- Inspect diffs and affected files thoroughly.
+- Run type checks, linters, or existing tests via shell commands to verify that code builds and passes verification.
+- DO NOT modify or write any code files yourself.
+- Report specific issues with line references, concrete explanations of failure modes, and suggestions for fixes.`
+
 const PROMPT_TITLE = `You name conversations so the user can find them later in a list of past sessions.
 
 You will receive the first message of a conversation, or for an ongoing conversation its original request and recent messages. Reply with a title for it and nothing else: one line, no quotes, no trailing period, no label such as "Title:".
@@ -55,7 +82,8 @@ export const Plugin = define({
     yield* ctx.agent.transform((editor) => {
       editor.update(Agent.defaultID, (item) => {
         item.name = Agent.Name.make("Build")
-        item.description = "The default agent. Executes tools based on configured permissions."
+        item.description =
+          "Primary coordinator agent. Plans tasks, executes coding workflows directly or delegates bounded subtasks to planner, coder, and reviewer subagents."
         item.mode = "primary"
         item.permissions.push({ action: "question", resource: "*", effect: "allow" })
       })
@@ -89,6 +117,65 @@ export const Plugin = define({
           { action: "read", resource: "*.env.*", effect: "ask" },
           { action: "read", resource: "*.env.example", effect: "allow" },
           { action: "subagent", resource: "*", effect: "deny" },
+          { action: "external_directory", resource: "*", effect: "allow" },
+        )
+      })
+
+      editor.update(Agent.ID.make("planner"), (item) => {
+        item.name = Agent.Name.make("Planner")
+        item.description =
+          "Software architecture and planning specialist. Inspects code, analyzes requirements, and designs concrete execution plans. Cannot edit files."
+        item.system = PROMPT_PLANNER
+        item.mode = "subagent"
+        item.permissions.push(
+          { action: "*", resource: "*", effect: "deny" },
+          { action: "read", resource: "*", effect: "allow" },
+          { action: "read", resource: "*.env", effect: "ask" },
+          { action: "read", resource: "*.env.*", effect: "ask" },
+          { action: "read", resource: "*.env.example", effect: "allow" },
+          { action: "grep", resource: "*", effect: "allow" },
+          { action: "glob", resource: "*", effect: "allow" },
+          { action: "subagent", resource: "*", effect: "deny" },
+          { action: "question", resource: "*", effect: "deny" },
+          { action: "edit", resource: "*", effect: "deny" },
+          { action: "write", resource: "*", effect: "deny" },
+          { action: "patch", resource: "*", effect: "deny" },
+          { action: "external_directory", resource: "*", effect: "allow" },
+        )
+      })
+
+      editor.update(Agent.ID.make("coder"), (item) => {
+        item.name = Agent.Name.make("Coder")
+        item.description =
+          "Implementation specialist. Writes code, applies edits, and runs commands to deliver bounded features or bugfixes."
+        item.system = PROMPT_CODER
+        item.mode = "subagent"
+        item.permissions.push(
+          { action: "question", resource: "*", effect: "deny" },
+          { action: "subagent", resource: "*", effect: "deny" },
+        )
+      })
+
+      editor.update(Agent.ID.make("reviewer"), (item) => {
+        item.name = Agent.Name.make("Reviewer")
+        item.description =
+          "Code reviewer and QA specialist. Evaluates changes, runs tests and typechecks, and reports findings. Cannot edit files."
+        item.system = PROMPT_REVIEWER
+        item.mode = "subagent"
+        item.permissions.push(
+          { action: "*", resource: "*", effect: "deny" },
+          { action: "read", resource: "*", effect: "allow" },
+          { action: "read", resource: "*.env", effect: "ask" },
+          { action: "read", resource: "*.env.*", effect: "ask" },
+          { action: "read", resource: "*.env.example", effect: "allow" },
+          { action: "grep", resource: "*", effect: "allow" },
+          { action: "glob", resource: "*", effect: "allow" },
+          { action: "shell", resource: "*", effect: "allow" },
+          { action: "subagent", resource: "*", effect: "deny" },
+          { action: "question", resource: "*", effect: "deny" },
+          { action: "edit", resource: "*", effect: "deny" },
+          { action: "write", resource: "*", effect: "deny" },
+          { action: "patch", resource: "*", effect: "deny" },
           { action: "external_directory", resource: "*", effect: "allow" },
         )
       })

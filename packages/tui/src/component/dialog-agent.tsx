@@ -11,7 +11,7 @@ export function DialogAgent() {
     local.agent.list().map((item) => {
       return {
         value: item.id,
-        title: item.id,
+        title: item.name ? String(item.name) : item.id,
         description: item.description,
       }
     }),

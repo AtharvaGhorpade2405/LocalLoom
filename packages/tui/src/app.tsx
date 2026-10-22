@@ -46,7 +46,7 @@ import {
   type TuiApp,
 } from "./context/runtime"
 import { DialogProvider, useDialog } from "./ui/dialog"
-import { DialogIntegration } from "./component/dialog-integration"
+// (dialog-integration disabled for local MVP)
 import { ErrorComponent } from "./component/error-component"
 import { PluginRouteMissing } from "./component/plugin-route-missing"
 import { EditorContextProvider } from "./context/editor"
@@ -62,12 +62,12 @@ import { LocationProvider, useLocation } from "./context/location"
 import { LocalProvider, useLocal } from "./context/local"
 import { PermissionProvider } from "./context/permission"
 import { DialogModel } from "./component/dialog-model"
-import { useConnected } from "./component/use-connected"
+// (use-connected disabled for local MVP)
 import { DialogMcp } from "./component/dialog-mcp"
 import { DialogStatus } from "./component/dialog-status"
 import { DialogConfig } from "./component/dialog-config"
 import { DialogDebug } from "./component/dialog-debug"
-import { DialogPair } from "./component/dialog-pair"
+// (dialog-pair disabled for local MVP)
 import { DialogHighlights } from "./component/dialog-highlights"
 import { claim } from "./util/highlights"
 import { DialogThemeList } from "./component/dialog-theme-list"
@@ -725,7 +725,7 @@ function App() {
       .catch(toast.error)
   })
 
-  const connected = useConnected()
+  // (connected check removed for local MVP)
   const appCommands = createMemo(() =>
     [
       {
@@ -742,7 +742,7 @@ function App() {
         title: "Switch session",
         category: "Session",
         suggested: data.session.list().length > 0,
-        slash: { name: "sessions", aliases: ["resume", "continue"] },
+        slash: { name: "sessions", aliases: ["session", "resume", "continue"] },
         run: () => {
           dialog.replace(() => <DialogSessionList />)
         },
@@ -881,7 +881,7 @@ function App() {
         title: "Switch model",
         suggested: true,
         category: "Agent",
-        slash: { name: "models" },
+        slash: { name: "models", aliases: ["model"] },
         run: () => {
           dialog.replace(() => <DialogModel />)
         },
@@ -926,7 +926,7 @@ function App() {
         name: "agent.list",
         title: "Switch agent",
         category: "Agent",
-        slash: { name: "agents" },
+        slash: { name: "agents", aliases: ["agent"] },
         run: () => {
           dialog.replace(() => <DialogAgent />)
         },
@@ -935,7 +935,7 @@ function App() {
         name: "mcp.list",
         title: "MCP servers",
         category: "Agent",
-        slash: { name: "mcps" },
+        slash: { name: "mcps", aliases: ["mcp"] },
         run: () => {
           dialog.replace(() => <DialogMcp />)
         },
@@ -986,14 +986,14 @@ function App() {
       {
         name: "provider.connect",
         title: "Connect an integration",
-        suggested: !connected(),
-        slash: { name: "connect" },
+        suggested: false,
+        palette: undefined,
         run: () => {
-          dialog.replace(() => (
-            <DialogIntegration
-              onConnected={(providerID) => dialog.replace(() => <DialogModel providerID={providerID} />)}
-            />
-          ))
+          toast.show({
+            title: "Local Mode",
+            message: "Cloud integrations are disabled in local-first mode. Use /models to configure local models.",
+            variant: "info",
+          })
         },
         category: "Integration",
       },
@@ -1041,9 +1041,13 @@ function App() {
       {
         name: "server.pair",
         title: "Pair device",
-        slash: { name: "pair", aliases: ["web"] },
+        palette: undefined,
         run: () => {
-          dialog.replace(() => <DialogPair />)
+          toast.show({
+            title: "Local Mode",
+            message: "Remote pairing relay is disabled in local-first mode.",
+            variant: "info",
+          })
         },
         category: "System",
       },
@@ -1096,7 +1100,7 @@ function App() {
       {
         name: "theme.switch",
         title: "Switch theme",
-        slash: { name: "themes" },
+        slash: { name: "themes", aliases: ["theme"] },
         run: () => {
           dialog.replace(() => <DialogThemeList />)
         },

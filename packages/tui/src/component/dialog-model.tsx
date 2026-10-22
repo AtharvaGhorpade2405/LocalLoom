@@ -1,27 +1,35 @@
-import type { ModelInfo } from "@opencode/client"
-import { createMemo, createSignal, Show } from "solid-js"
+import { TextAttributes } from "@opentui/core"
+import { createMemo, createSignal } from "solid-js"
 import { useLocal } from "../context/local"
 import { DialogSelect } from "../ui/dialog-select"
-import { useDialog } from "../ui/dialog"
-import { DialogIntegration } from "./dialog-integration"
+import { DIALOG_LIST_INSET, useDialog } from "../ui/dialog"
 import { DialogVariant } from "./dialog-variant"
 import * as fuzzysort from "fuzzysort"
-import { useConnected } from "./use-connected"
 import { useData } from "../context/data"
+import { useTheme } from "../context/theme"
+import { useRoute } from "../context/route"
+import { useClient } from "../context/client"
 import { modelPreferenceKey } from "../model-preference"
 import { useLocation } from "../context/location"
 import { useNewDesigns } from "../config"
-import { DialogFreeModels } from "./dialog-model-free"
-import { FavoriteMarker, ModelDetail, isFreeModel, prioritizeFavorites, sortModelOptions } from "./model-options"
+import { FavoriteMarker, ModelDetail, prioritizeFavorites, sortModelOptions } from "./model-options"
 
 export function DialogModel(props: { providerID?: string }) {
   const local = useLocal()
   const dialog = useDialog()
-  const newDesigns = useNewDesigns()
-  const connected = useConnected()
+  const route = useRoute()
+  const client = useClient()
 
   function select(providerID: string, modelID: string) {
     local.model.set({ providerID, modelID }, { recent: true })
+    if (route.data.type === "session") {
+      void client.api.session
+        .switchModel({
+          sessionID: route.data.sessionID,
+          model: { providerID, id: modelID },
+        })
+        .catch(() => undefined)
+    }
     const list = local.model.variant.list()
     const cur = local.model.variant.current()
     if (cur && list.includes(cur)) {
@@ -35,30 +43,18 @@ export function DialogModel(props: { providerID?: string }) {
     dialog.clear()
   }
 
-  function connect() {
-    dialog.replace(() => (
-      <DialogIntegration onConnected={(providerID) => dialog.replace(() => <DialogModel providerID={providerID} />)} />
-    ))
-  }
-
-  return (
-    <Show
-      when={newDesigns() && !connected() && !props.providerID}
-      fallback={<DialogConnectedModels providerID={props.providerID} onSelect={select} onConnect={connect} />}
-    >
-      <DialogFreeModels onSelect={select} onConnect={connect} />
-    </Show>
-  )
+  return <DialogConnectedModels providerID={props.providerID} onSelect={select} />
 }
 
 function DialogConnectedModels(props: {
   providerID?: string
   onSelect: (providerID: string, modelID: string) => void
-  onConnect: () => void
 }) {
   const local = useLocal()
   const newDesigns = useNewDesigns()
   const data = useData()
+  const theme = useTheme()
+  const dialog = useDialog()
   const location = useLocation()
   const [query, setQuery] = createSignal("")
   // Under new designs, favoriting does not reorder the list until the dialog is reopened.
@@ -67,44 +63,61 @@ function DialogConnectedModels(props: {
   const isFavorite = (value: { providerID: string; modelID: string } | undefined) =>
     value !== undefined &&
     local.model.favorite().some((item) => item.providerID === value.providerID && item.modelID === value.modelID)
-  // Under new designs the detail row shows the price, so the trailing slot only marks favorites.
-  const trailing = (model: ModelInfo, favorite: boolean) => {
-    if (newDesigns()) return favorite ? <FavoriteMarker /> : undefined
-    return isFreeModel(model) ? "Free" : undefined
-  }
-  // OpenCode's own free models get their own group at the end of the list instead of joining "OpenCode".
-  const freeGroup = (model: ModelInfo) =>
-    newDesigns() && !props.providerID && model.providerID === "opencode" && isFreeModel(model)
 
-  const connected = useConnected()
+  const isActive = (value: { providerID: string; modelID: string } | undefined) => {
+    const cur = local.model.current()
+    return cur !== undefined && value !== undefined && cur.providerID === value.providerID && cur.modelID === value.modelID
+  }
+
+  // Trailing indicator: marks active status and favorites.
+  const trailing = (favorite: boolean, active: boolean) => {
+    if (active && favorite) {
+      return (
+        <>
+          <span style={{ fg: theme.text.formfield.selected, attributes: TextAttributes.BOLD }}>Active </span>
+          <FavoriteMarker />
+        </>
+      )
+    }
+    if (active) {
+      return (
+        <span style={{ fg: theme.text.formfield.selected, attributes: TextAttributes.BOLD }}>
+          Active
+        </span>
+      )
+    }
+    if (favorite) {
+      return <FavoriteMarker />
+    }
+    return undefined
+  }
+
   const providers = createMemo(
     () => new Map((data.location.provider.list(location.ref) ?? []).map((item) => [item.id, item])),
   )
   const models = createMemo(() => data.location.model.list(location.ref) ?? [])
 
-  const showExtra = createMemo(() => connected() && !props.providerID)
-
   const options = createMemo(() => {
     const needle = query().trim()
-    const showSections = showExtra() && needle.length === 0
-    const favorites = connected() ? (newDesigns() ? favoritesAtOpen : local.model.favorite()) : []
+    const showSections = !props.providerID && needle.length === 0
+    const favorites = newDesigns() ? favoritesAtOpen : local.model.favorite()
     const recents = local.model.recent()
 
     function toOptions(items: typeof favorites, category: string) {
       if (!showSections) return []
       return items.flatMap((item) => {
-        const model = models().find((model) => model.providerID === item.providerID && model.id === item.modelID)
+        const model = models().find((m) => m.providerID === item.providerID && m.id === item.modelID)
         if (!model) return []
-        const provider = providers().get(model.providerID)
+        const active = isActive(item)
         return [
           {
             key: item,
             value: { providerID: model.providerID, modelID: model.id },
             title: model.name,
             releaseDate: model.time.released,
-            description: provider?.name ?? model.providerID,
+            description: `${model.providerID}/${model.id}`,
             category,
-            footer: trailing(model, isFavorite(item)),
+            footer: trailing(isFavorite(item), active),
             detail: newDesigns() ? () => <ModelDetail model={model} /> : undefined,
             onSelect: () => {
               props.onSelect(model.providerID, model.id)
@@ -129,18 +142,18 @@ function DialogConnectedModels(props: {
         .map((model) => {
           const provider = providers().get(model.providerID)
           const value = { providerID: model.providerID, modelID: model.id }
-          // Users with nothing connected can only favorite models in the free picker (new designs); this picker keeps them unavailable.
-          const favorite = connected() && isFavorite(value)
+          const favorite = isFavorite(value)
+          const active = isActive(value)
           return {
             value,
             providerID: model.providerID,
             providerName: provider?.name ?? model.providerID,
             title: model.name,
             releaseDate: model.time.released,
-            description: newDesigns() ? undefined : favorite ? "(Favorite)" : undefined,
-            category: connected() ? (freeGroup(model) ? "Free" : (provider?.name ?? model.providerID)) : undefined,
-            footer: trailing(model, favorite),
-            free: isFreeModel(model),
+            description: `${model.providerID}/${model.id}`,
+            category: provider?.name ?? model.providerID,
+            footer: trailing(favorite, active),
+            free: true,
             detail: newDesigns() ? () => <ModelDetail model={model} /> : undefined,
             onSelect() {
               props.onSelect(model.providerID, model.id)
@@ -161,19 +174,17 @@ function DialogConnectedModels(props: {
             return false
           return true
         }),
-      connected(),
+      true,
     )
 
     if (needle) {
       const results = prioritizeFavorites(
         sortModelOptions(
-          fuzzysort.go(needle, modelOptions, { keys: ["title", "category"] }).map((item) => item.obj),
+          fuzzysort.go(needle, modelOptions, { keys: ["title", "description", "category"] }).map((item) => item.obj),
           false,
         ),
         favoritePriority,
       )
-      // Search results name the provider inline. Without a category, the trailing slot keeps the favorite marker
-      // instead of falling back to the provider name.
       if (!newDesigns()) return results
       return results.map((option) => ({ ...option, description: option.providerName, category: undefined }))
     }
@@ -181,8 +192,7 @@ function DialogConnectedModels(props: {
     return [
       ...favoriteOptions,
       ...recentOptions,
-      ...modelOptions.filter((option) => option.category !== "Free"),
-      ...modelOptions.filter((option) => option.category === "Free"),
+      ...modelOptions,
     ]
   })
 
@@ -199,23 +209,30 @@ function DialogConnectedModels(props: {
       searchInTitle
       titlePlaceholder="Search models"
       options={options()}
+      onCancel={() => dialog.clear()}
+      emptyView={
+        <box paddingLeft={DIALOG_LIST_INSET} paddingRight={DIALOG_LIST_INSET}>
+          <text fg={theme.text.feedback.error.base} attributes={TextAttributes.BOLD}>
+            No local models found
+          </text>
+          <text fg={theme.text.muted}>Please ensure Ollama is running at http://127.0.0.1:11434</text>
+          <text fg={theme.text.muted}>Install models with: ollama pull qwen2.5-coder:7b</text>
+          <text fg={theme.text.muted}>After starting Ollama or pulling models, press 'refresh models'.</text>
+        </box>
+      }
       actions={[
         {
-          command: "model.dialog.provider",
-          title: newDesigns()
-            ? connected()
-              ? "connect integration"
-              : "view all integrations"
-            : connected()
-              ? "Connect an integration"
-              : "View all integrations",
+          command: "model.dialog.refresh",
+          title: "refresh models",
           selection: "none",
-          onTrigger: props.onConnect,
+          onTrigger: async () => {
+            data.location.model.invalidate(location.ref)
+            await data.location.model.sync(location.ref)
+          },
         },
         {
           command: "model.dialog.favorite",
           title: newDesigns() ? (option) => (isFavorite(option?.value) ? "unfavorite" : "favorite") : "Favorite",
-          hidden: !connected(),
           onTrigger: (option) => {
             local.model.toggleFavorite(option.value as { providerID: string; modelID: string })
           },

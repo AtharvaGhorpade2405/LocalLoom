@@ -13,7 +13,7 @@ export class ModelNotSelectedError extends Schema.TaggedError<ModelNotSelectedEr
   { sessionID: SessionSchema.ID },
 ) {
   override get message() {
-    return `No model is available for session ${this.sessionID}`
+    return `No local model is available. Please ensure Ollama is running at http://127.0.0.1:11434 and has models installed (e.g. run "ollama pull qwen2.5-coder:7b").`
   }
 }
 
@@ -22,11 +22,9 @@ export class ModelUnavailableError extends Schema.TaggedError<ModelUnavailableEr
   { providerID: Provider.ID, modelID: Model.ID },
 ) {
   override get message() {
-    if (this.providerID === "azure-cognitive-services")
-      return `Model unavailable: ${this.providerID}/${this.modelID}. This provider has been deprecated; use azure/${this.modelID} instead.`
-    if (this.providerID === "google-vertex-anthropic")
-      return `Model unavailable: ${this.providerID}/${this.modelID}. This provider has been deprecated; use google-vertex/${this.modelID} instead.`
-    return `Model unavailable: ${this.providerID}/${this.modelID}`
+    if (this.providerID !== "ollama")
+      return `Model unavailable: ${this.providerID}/${this.modelID}. Cloud providers are disabled in this local-only environment. Please select an installed Ollama model using /models.`
+    return `Model unavailable: ollama/${this.modelID}. Please ensure the model is installed (e.g. run "ollama pull ${this.modelID}") and Ollama is running at http://127.0.0.1:11434.`
   }
 }
 export type Error = ModelNotSelectedError | ModelUnavailableError | ModelResolver.Error

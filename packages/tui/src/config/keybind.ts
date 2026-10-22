@@ -161,6 +161,7 @@ export const Definitions = {
   "session.tab.select.10": keybind("<leader>0,ctrl+0", "Switch to session tab 10"),
 
   "stash.delete": keybind("ctrl+d", "Delete stash entry"),
+  "model.dialog.refresh": keybind("ctrl+r", "Refresh local models"),
   "model.dialog.provider": keybind("ctrl+a", "Open provider list from model dialog"),
   "model.dialog.favorite": keybind("ctrl+f", "Toggle model favorite status"),
   "model.list": keybind("<leader>m", "List available models"),

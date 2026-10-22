@@ -24,5 +24,16 @@ export function render(prompt: string, tools: string[]) {
       "- Use the edit tool for targeted changes to existing text files. It replaces the exact text in `oldString` with `newString`, and the values must differ. By default, `oldString` must occur exactly once. If it occurs multiple times, include more surrounding context to make it unique or set `replaceAll` to true to replace every occurrence.",
     )
   }
+  if (tools.includes("subagent")) {
+    instructions.push(
+      "- Multi-Agent Orchestration: You own the task lifecycle and coordinate specialist subagents via the subagent tool:",
+      "  * planner: Analyzes requirements, inspects codebase, and designs bounded sequential execution steps. Read-only.",
+      "  * coder: Implements bounded code changes using edit/write/patch tools and executes tests. Cannot spawn subagents.",
+      "  * reviewer: Evaluates changes, runs tests and linters via shell, and reports defects. Read-only.",
+      "  * Workflow: For non-trivial coding tasks, follow sequential lifecycle: PLAN (planner) -> CODE (coder) -> REVIEW (reviewer). If reviewer reports defects, direct coder to fix them (up to 2 retries).",
+      "  * Context: Provide bounded task prompts with specific file targets and requirements without copying full conversation history.",
+      "  * Final Summary: Always conclude with Changes Made, Checks Performed, and Unresolved Issues.",
+    )
+  }
   return prompt.replace("${OPENCODE_TOOL_GUIDANCE}", instructions.join("\n"))
 }

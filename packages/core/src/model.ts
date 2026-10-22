@@ -229,7 +229,7 @@ const layer = Layer.effect(
         const all = Array.from(byProvider.values())
           .flatMap((models) => Array.from(models.values()))
           .sort((left, right) => right.time.released - left.time.released)
-        cached = freeze({ data, all, available: preferFree(all.filter((model) => model.enabled)), byProvider }, true)
+        cached = freeze({ data, all, available: preferLocal(all.filter((model) => model.enabled)), byProvider }, true)
         return cached
       }
     })
@@ -283,9 +283,16 @@ const layer = Layer.effect(
             model.capabilities.input.some((item) => item.startsWith("text")) &&
             model.capabilities.output.some((item) => item.startsWith("text")),
         )
-        return ["gpt-luna", "gemini-flash-lite", "gemini-flash", "claude-haiku"].flatMap(
-          (family) => models.find((model) => model.family === family) ?? [],
-        )[0]
+        return [
+          "qwen2.5-coder:1.5b",
+          "qwen2.5-coder:7b",
+          "llama3.2:1b",
+          "llama3.2:3b",
+          "gpt-luna",
+          "gemini-flash-lite",
+          "gemini-flash",
+          "claude-haiku",
+        ].flatMap((family) => models.find((model) => model.family === family || model.id.includes(family)) ?? [])[0]
       }),
     })
   }),
@@ -293,22 +300,21 @@ const layer = Layer.effect(
 
 export const node = makeLocationNode({ service: Service, layer, deps: [Provider.node, Bus.node, Location.node] })
 
-// Signed out, only free OpenCode models are enabled. Clients default to the first available model, so keep
-// these free models ahead of each new free launch instead of letting release order pick the default.
-const PREFERRED_FREE = [
-  "big-pickle",
-  "deepseek-v4.1-flash-free",
-  "glm-5.3-flash-free",
-  "muse-spark-1.3-contributor-free",
+const PREFERRED_LOCAL = [
+  "qwen2.5-coder:7b",
+  "qwen2.5-coder:latest",
+  "qwen2.5-coder:14b",
+  "qwen2.5-coder:32b",
+  "qwen2.5-coder:1.5b",
+  "deepseek-coder:6.7b",
+  "codellama:7b",
 ]
 
-function preferFree(models: Info[]) {
-  const freeOnly = models.every(
-    (model) => model.providerID === Provider.ID.opencode && !model.cost.some((cost) => cost.input > 0),
+function preferLocal(models: Info[]) {
+  const preferred = PREFERRED_LOCAL.flatMap((id) =>
+    models.filter((model) => model.id === id || model.id.startsWith(id + ":") || model.id.includes(id)),
   )
-  if (!freeOnly) return models
-  const picks = PREFERRED_FREE.flatMap((id) => models.find((model) => model.id === id) ?? [])
-  return [...picks, ...models.filter((model) => !picks.includes(model))]
+  return Array.from(new Set([...preferred, ...models]))
 }
 
 export function supportsText(model: Pick<Info, "capabilities">) {

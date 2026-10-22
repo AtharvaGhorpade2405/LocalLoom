@@ -14,6 +14,12 @@ export class Info extends Schema.Class<Info>("ConfigExperimental.Info")({
   subagent_depth: NonNegativeInt.pipe(optional).annotate({
     description: "Maximum subagent nesting depth. Defaults to 1.",
   }),
+  subagent_max_concurrent: NonNegativeInt.pipe(optional).annotate({
+    description: "Maximum concurrent subagents per session. Defaults to 2.",
+  }),
+  subagent_max_tasks: NonNegativeInt.pipe(optional).annotate({
+    description: "Maximum total subagent invocations per root session. Defaults to 10.",
+  }),
   location_idle_timeout: Schema.Union([Schema.DurationFromString, Schema.Literal(false)])
     .pipe(optional)
     .annotate({

@@ -179,9 +179,12 @@ describe("Agent", () => {
       const agents = yield* agent.list()
       expect(agents.map((item) => String(item.id)).sort()).toEqual([
         "build",
+        "coder",
         "compaction",
         "explore",
         "general",
+        "planner",
+        "reviewer",
         "summary",
         "title",
       ])
@@ -203,6 +206,7 @@ describe("Agent", () => {
       expect(Permission.evaluate("external_directory", path.join(global.config, "*"), permissions).effect).toBe("allow")
       expect(Permission.evaluate("external_directory", path.join(global.tmp, "*"), permissions).effect).toBe("allow")
       expect(Permission.evaluate("external_directory", "/outside/*", permissions).effect).toBe("allow")
+
       const explore = yield* agent.get(Agent.ID.make("explore"))
       expect(Permission.evaluate("shell", "git log -5", explore?.permissions ?? []).effect).toBe("allow")
       expect(Permission.evaluate("edit", "src/index.ts", explore?.permissions ?? []).effect).toBe("deny")
@@ -211,6 +215,29 @@ describe("Agent", () => {
       expect(Permission.evaluate("read", ".env.example", explore?.permissions ?? []).effect).toBe("allow")
       expect(Permission.evaluate("read", "src/index.ts", explore?.permissions ?? []).effect).toBe("allow")
       expect(Permission.evaluate("external_directory", "/outside/*", explore?.permissions ?? []).effect).toBe("allow")
+
+      const planner = yield* agent.get(Agent.ID.make("planner"))
+      expect(Permission.evaluate("edit", "src/index.ts", planner?.permissions ?? []).effect).toBe("deny")
+      expect(Permission.evaluate("write", "src/index.ts", planner?.permissions ?? []).effect).toBe("deny")
+      expect(Permission.evaluate("patch", "src/index.ts", planner?.permissions ?? []).effect).toBe("deny")
+      expect(Permission.evaluate("read", "src/index.ts", planner?.permissions ?? []).effect).toBe("allow")
+      expect(Permission.evaluate("grep", "*", planner?.permissions ?? []).effect).toBe("allow")
+      expect(Permission.evaluate("glob", "*", planner?.permissions ?? []).effect).toBe("allow")
+
+      const coder = yield* agent.get(Agent.ID.make("coder"))
+      expect(Permission.evaluate("edit", "src/index.ts", coder?.permissions ?? []).effect).toBe("allow")
+      expect(Permission.evaluate("write", "src/index.ts", coder?.permissions ?? []).effect).toBe("allow")
+      expect(Permission.evaluate("patch", "src/index.ts", coder?.permissions ?? []).effect).toBe("allow")
+      expect(Permission.evaluate("shell", "bun test", coder?.permissions ?? []).effect).toBe("allow")
+      expect(Permission.evaluate("subagent", "*", coder?.permissions ?? []).effect).toBe("deny")
+
+      const reviewer = yield* agent.get(Agent.ID.make("reviewer"))
+      expect(Permission.evaluate("edit", "src/index.ts", reviewer?.permissions ?? []).effect).toBe("deny")
+      expect(Permission.evaluate("write", "src/index.ts", reviewer?.permissions ?? []).effect).toBe("deny")
+      expect(Permission.evaluate("patch", "src/index.ts", reviewer?.permissions ?? []).effect).toBe("deny")
+      expect(Permission.evaluate("read", "src/index.ts", reviewer?.permissions ?? []).effect).toBe("allow")
+      expect(Permission.evaluate("shell", "bun test", reviewer?.permissions ?? []).effect).toBe("allow")
+
       for (const item of agents) {
         expect(item.permissions.some((rule) => rule.action === "bash" && rule.effect !== "deny")).toBe(false)
       }
@@ -226,7 +253,7 @@ describe("Agent", () => {
         }),
       )
 
-      yield* Effect.forEach(["general", "explore"], (id) =>
+      yield* Effect.forEach(["general", "explore", "planner", "coder", "reviewer"], (id) =>
         Effect.gen(function* () {
           const info = yield* agent.get(Agent.ID.make(id))
           if (!info) throw new Error(`expected built-in agent: ${id}`)

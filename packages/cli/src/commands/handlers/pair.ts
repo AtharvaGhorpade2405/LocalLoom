@@ -13,6 +13,10 @@ export default Runtime.handler(
   Commands.commands.pair,
   Effect.fn("cli.pair")(function* (input: Runtime.Input<typeof Commands.commands.pair>) {
     const config = yield* ServiceConfig.read()
+    if (input.remote)
+      return yield* Effect.fail(
+        new Error("Cloud device pairing relay is disabled in local-first mode. Connect directly to the local server."),
+      )
     if (config.disabled === true)
       return yield* Effect.fail(
         new Error("Pairing requires the background service; run `opencode service unset disabled` first"),
