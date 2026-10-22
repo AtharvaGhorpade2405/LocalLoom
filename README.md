@@ -1,113 +1,111 @@
-# localloom
+# LocalLoom
 
-Minimal local-first multi-agent coding TUI. Type `localloom` to enter the UI, press `/models` to pick a local LLM, then describe a task.
+> **High-performance, local-first AI coding agent powered by Ollama.**
+
+LocalLoom is a lightweight, privacy-focused coding assistant engineered for 100% offline local inference. It combines an OpenTUI terminal interface, durable SQLite session persistence, specialized multi-agent orchestration, and workspace coding tools—with zero remote cloud fallbacks.
+
+---
+
+## Key Features
+
+- **100% Local Inference**: Direct streaming via local Ollama (`http://127.0.0.1:11434`), defaulting to `qwen2.5-coder:7b`. Cloud inference and remote fallback are strictly forbidden.
+- **Interactive Model Selection (`/models`)**: Keyboard-navigable dialog to inspect local model inventory, view parameter counts, switch models on the fly, and persist preferences.
+- **Multi-Agent Orchestration**:
+  - **Planner**: Deconstructs user requests into bounded, verifiable steps.
+  - **Coder**: Executes file edits and runs terminal commands within project boundaries.
+  - **Reviewer**: Inspects diffs, runs test suites, and validates correctness.
+  - Includes loop prevention, concurrency limits, and conflicting file-edit locks.
+- **Durable Conversation History**: SQLite & Drizzle ORM persistence preserving message order, model selection, tool invocations, and session continuity across application restarts.
+- **Workspace Tools**: File reading, exact-string editing, file diffs, glob/grep search, AST codemode tools, and controlled shell execution with safety checks.
+- **Polished Terminal Interface**: Built with OpenTUI and SolidJS, featuring real-time token streaming, active model indicators, tool status cards, and notification sounds.
+
+---
 
 ## Quickstart
 
+### Prerequisites
+
+1. **Bun runtime** (version 1.2+):
+   ```bash
+   curl -fsSL https://bun.sh/install | bash  # macOS/Linux
+   powershell -c "irm bun.sh/install.ps1 | iex"  # Windows
+   ```
+2. **Ollama** running locally with a compatible coding model:
+   ```bash
+   ollama serve
+   ollama pull qwen2.5-coder:7b
+   ```
+
+### Installation
+
 ```bash
-# install
-git clone https://github.com/AtharvaGhorpade2405/LocalLoom
-cd localloom
-npm install
-npm run build  # compile TypeScript to JavaScript for faster startup
-npm link       # puts `localloom` on PATH
-
-# run a local model server (pick one)
-# ollama:    ollama serve
-# LM Studio: start server on port 1234
-# llama.cpp: llama-server -m model.gguf --port 8080
-# vLLM:      vllm serve <model> --port 8000
-
-# enter the TUI
-localloom
-# in TUI: press /models to select model, then type your task and press Enter
+git clone https://github.com/AtharvaGhorpade2405/LocalLoom.git
+cd LocalLoom
+bun install
 ```
 
-Or run headless:
+### Launch the Application
+
 ```bash
-localloom run "add a health endpoint to the express app"
+# Run the live TUI interface
+bun run dev:live
+
+# Or launch directly from packages/cli
+bun run dev
 ```
 
-## Requirements
-
-- Node.js 18+
-- A local LLM server (Ollama, LM Studio, llama.cpp, vLLM, or any OpenAI-compatible endpoint)
-
-## Configuration
-
-Config is loaded from (highest priority wins):
-1. `LOCALLOOM_BASE_URL` + `LOCALLOOM_MODEL` env vars
-2. `localloom.json` in current directory
-3. `~/.config/localloom/config.json` (or `%APPDATA%\localloom\config.json` on Windows)
-
-Example `~/.config/localloom/config.json`:
-```json
-{
-  "model": "qwen2.5-coder:7b",
-  "providerId": "ollama",
-  "providers": [
-    { "id": "ollama", "kind": "ollama", "baseUrl": "http://127.0.0.1:11434" },
-    { "id": "lmstudio", "kind": "openai", "baseUrl": "http://127.0.0.1:1234/v1", "apiKey": "lm-studio" }
-  ],
-  "orchestrator": { "enabled": true, "review": true, "maxRounds": 1 },
-  "maxSteps": 24,
-  "temperature": 0.2
-}
-```
-
-## TUI Controls
-
-| Key | Action |
-|-----|--------|
-| Enter | Send task |
-| `/models` | Open model picker (arrow keys, Enter to select, Esc to cancel, type to filter) |
-| Esc | Interrupt running agent |
-| Ctrl+C | Exit (twice if running) |
+---
 
 ## Architecture
 
-```
+LocalLoom is structured as a lean, focused workspace:
+
+```text
 localloom/
-  src/
-    index.tsx       # CLI entry: TUI or `run <task>`
-    config.ts       # Config + provider registry + model persistence
-    llm.ts          # OpenAI-compatible + Ollama chat streaming, model discovery
-    tools.ts        # read, write, edit, bash, list, grep, finish
-    orchestrator.ts # Multi-agent pipeline: plan → build → review → fix loop
-    ui/
-      app.tsx       # Ink TUI: Static history + live streaming + /models dialog
-      markdown.tsx  # Lightweight markdown renderer (code fences, headings, inline)
-      models.tsx    # Model picker dialog
+├── packages/
+│   ├── cli/            # CLI entrypoint and binary dispatcher
+│   ├── tui/            # OpenTUI terminal interface with model dialog and chat timeline
+│   ├── server/         # Background HTTP daemon hosting local session RPC endpoints
+│   ├── core/           # Session coordinator, specialist agents, tool registry, SQLite store
+│   ├── schema/         # Effect Schema definitions for models, config, and tools
+│   ├── protocol/       # RPC protocol definitions shared across Client, Server, and TUI
+│   ├── client/         # Typed RPC client for internal daemon communication
+│   ├── codemode/       # AST-based code transformation tools
+│   ├── theme/          # Semantic TUI theme tokens and styling
+│   ├── util/           # Low-level Effect platform helpers and filesystem utilities
+│   ├── plugin/         # Plugin interfaces and hook contracts
+│   └── ui/             # Notification audio assets
+├── package.json        # Lean workspace configuration (~550 MB node_modules)
+└── bunfig.toml
 ```
 
-### Multi-agent pipeline
+---
 
-1. **plan** (read-only): breaks goal into 3-6 concrete steps with file names
-2. **build**: executes plan using tools (read/write/edit/bash/grep/list)
-3. **review** (read-only): inspects changes, emits `VERDICT: PASS` or `VERDICT: FAIL` + issues
-4. **fix** (loops up to `maxRounds`): applies reviewer's fixes
+## Verification & Testing
 
-Disable with `"orchestrator": { "enabled": false }` in config for direct single-agent mode.
-
-## Tools
-
-| Tool | Read-only? | Description |
-|------|------------|-------------|
-| `read` | yes | Read file with line numbers, optional offset/limit |
-| `list` | yes | Recursive directory listing (skips node_modules/.git/dist) |
-| `grep` | yes | Regex search across source files |
-| `write` | no | Create/overwrite file |
-| `edit` | no | Exact-string replace in existing file |
-| `bash` | no | Shell command in workspace root |
-| `finish` | — | Signal completion with summary |
-
-## Development
+LocalLoom includes a comprehensive automated test suite covering all local-first workflows:
 
 ```bash
-npm run build      # compile to dist/
-npm run typecheck  # strict TS check
-npm run tui        # run from source (tsx)
+# Test local model selection and zero-cloud fallback policies
+cd packages/core
+bun test test/local-model.test.ts
+
+# Test specialist agent orchestration and file locks
+bun test test/orchestration.test.ts
+
+# Test conversation persistence and restart recovery
+bun test test/conversation-history.test.ts
+
+# Run end-to-end integration workflows
+bun test test/e2e-verification.test.ts
+
+# Test TUI dialogs and interface polish
+cd ../tui
+bun test test/dialog-model.test.tsx
+bun test test/ui-polish.test.tsx
 ```
+
+---
 
 ## License
 

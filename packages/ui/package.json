@@ -1,0 +1,10 @@
+{
+  "name": "@opencode/ui",
+  "version": "2.1.2",
+  "type": "module",
+  "license": "MIT",
+  "exports": {
+    "./package.json": "./package.json",
+    "./audio/*": "./src/assets/audio/*"
+  }
+}
